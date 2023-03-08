@@ -213,7 +213,7 @@ func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key ke
 	}
 	/* replicate from key[0] to key[split - 1] */
 	copy(left.key[:], nl.key[:insert])
-	copy(left.key[insert+1:], nl.key[insert+1:split])
+	copy(left.key[insert+1:], nl.key[insert:split-1])
 	left.key[insert] = key
 
 	var i, j int
@@ -227,7 +227,7 @@ func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key ke
 		split_key = key
 	} else {
 		nl.subPtr[0] = nl.subPtr[split]
-		split_key = nl.key[split-1]
+		split_key = nl.key[split]
 	}
 	sbn := getNode(nl.subPtr[0])
 	sbn.parent = nl
