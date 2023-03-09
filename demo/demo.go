@@ -14,7 +14,7 @@ type bplusTreeConfig struct {
 	entries int
 }
 
-func bplus_tree_setting(config *bplusTreeConfig) int {
+func bplusTreeSetting(config *bplusTreeConfig) int {
 	var ret int
 	var again = true
 
@@ -105,7 +105,7 @@ func bplus_tree_setting(config *bplusTreeConfig) int {
 	return ret
 }
 
-func _proc(tree *bplustree.BPlusTree, op byte, n int) {
+func proc(tree *bplustree.BPlusTree, op byte, n int) {
 	switch op {
 	case 'i':
 		tree.Insert(n, n)
@@ -118,7 +118,7 @@ func _proc(tree *bplustree.BPlusTree, op byte, n int) {
 	}
 }
 
-func number_process(br *bufio.Reader, tree *bplustree.BPlusTree, op byte) int {
+func numberProcess(br *bufio.Reader, tree *bplustree.BPlusTree, op byte) int {
 	var n int
 	var start, end int
 
@@ -144,16 +144,16 @@ func number_process(br *bufio.Reader, tree *bplustree.BPlusTree, op byte) int {
 			if start != 0 && end != 0 {
 				if start <= end {
 					for n = start; n <= end; n++ {
-						_proc(tree, op, n)
+						proc(tree, op, n)
 					}
 				} else {
 					for n = start; n >= end; n-- {
-						_proc(tree, op, n)
+						proc(tree, op, n)
 					}
 				}
 			} else {
 				if n != 0 {
-					_proc(tree, op, n)
+					proc(tree, op, n)
 				}
 			}
 
@@ -204,7 +204,7 @@ func command_tips() {
 	fmt.Fprintf(os.Stderr, "q: quit.\n")
 }
 
-func command_process(tree *bplustree.BPlusTree) {
+func commandProcess(tree *bplustree.BPlusTree) {
 	br := bufio.NewReader(os.Stdin)
 	fmt.Fprintf(os.Stderr, "Please input command (Type 'h' for help): ")
 	for {
@@ -224,7 +224,7 @@ func command_process(tree *bplustree.BPlusTree) {
 		case 'd':
 			bplustree.Dump(tree)
 		case 'i', 'r', 's':
-			if number_process(br, tree, c) < 0 {
+			if numberProcess(br, tree, c) < 0 {
 				return
 			}
 		case '\n':
@@ -239,7 +239,7 @@ func main() {
 	var config bplusTreeConfig
 
 	/* B+tree default setting */
-	if bplus_tree_setting(&config) < 0 {
+	if bplusTreeSetting(&config) < 0 {
 		return
 	}
 
@@ -251,8 +251,5 @@ func main() {
 	}
 
 	/* Operation process */
-	command_process(tree)
-
-	/* Deinit b+tree */
-	// bplus_tree_deinit(tree)
+	commandProcess(tree)
 }

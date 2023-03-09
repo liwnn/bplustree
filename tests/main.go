@@ -12,9 +12,7 @@ type bplusTreeConfig struct {
 	entries int
 }
 
-func get_put_test(tree *bplustree.BPlusTree) {
-	var i int
-
+func getPutTest(tree *bplustree.BPlusTree) {
 	fmt.Fprintf(os.Stderr, "\n> B+tree getter and setter testing...\n")
 
 	tree.Insert(24, 24)
@@ -68,7 +66,7 @@ func get_put_test(tree *bplustree.BPlusTree) {
 
 	/* Clear all */
 	fmt.Fprintf(os.Stderr, "\n> Clear all...\n")
-	for i = 1; i <= 100; i++ {
+	for i := 1; i <= 100; i++ {
 		tree.Delete(i)
 	}
 	bplustree.Dump(tree)
@@ -81,7 +79,7 @@ func get_put_test(tree *bplustree.BPlusTree) {
 	fmt.Fprintf(os.Stderr, "key:100 found:%v\n", found)
 }
 
-func bplus_tree_insert_delete_test(tree *bplustree.BPlusTree) {
+func insertDeleteTest(tree *bplustree.BPlusTree) {
 	var i int
 	var max_key = 100
 
@@ -140,7 +138,7 @@ func bplus_tree_insert_delete_test(tree *bplustree.BPlusTree) {
 	bplustree.Dump(tree)
 }
 
-func bplus_tree_normal_test() {
+func normalTest() {
 	var tree *bplustree.BPlusTree
 	var config bplusTreeConfig
 
@@ -156,16 +154,15 @@ func bplus_tree_normal_test() {
 	}
 
 	/* getter and setter test */
-	get_put_test(tree)
+	getPutTest(tree)
 
 	/* insertion and deletion test */
-	bplus_tree_insert_delete_test(tree)
+	insertDeleteTest(tree)
 
 	/* Deinit b+tree */
 	// bplus_tree_deinit(tree)
 }
 
 func main() {
-	bplus_tree_normal_test()
-	//bplus_tree_abnormal_test();
+	normalTest()
 }

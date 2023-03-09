@@ -7,8 +7,10 @@ import (
 const (
 	MaxOrder   = 256
 	MaxEntries = 512
-	MaxLevel   = 10
 )
+
+type KeyType = int
+type DataType = int
 
 type nodeType int32
 
@@ -17,13 +19,10 @@ const (
 	nodeNonLeaf
 )
 
-type KeyType = int
-type DataType = int
-
 type bplusNode struct {
 	typ          nodeType      // leaf or nonLeaf
 	parentKeyIdx int           // index of parent node
-	parent       *bplusNonLeaf // piointer to parent node
+	parent       *bplusNonLeaf // pointer to parent node
 }
 
 type node interface{}
@@ -71,25 +70,6 @@ func (nl *bplusNonLeaf) listAdd(link *bplusNonLeaf, next *bplusNonLeaf) {
 	nl.next = link
 }
 
-func (nl *bplusNonLeaf) simpleRemove(remove int) {
-	assert(nl.children >= 2)
-	copy(nl.key[remove:], nl.key[remove+1:nl.children-1])
-	copy(nl.subPtr[remove+1:], nl.subPtr[remove+2:nl.children])
-	nl.children--
-	// for gc
-	nl.subPtr[nl.children] = nil
-
-	if _, ok := nl.subPtr[0].(*bplusLeaf); ok {
-		for i := remove + 1; i < nl.children; i++ {
-			nl.subPtr[i].(*bplusLeaf).parentKeyIdx = i - 1
-		}
-	} else {
-		for i := remove + 1; i < nl.children; i++ {
-			nl.subPtr[i].(*bplusNonLeaf).parentKeyIdx = i - 1
-		}
-	}
-}
-
 func (nl *bplusNonLeaf) simpleInsert(lch node, rch node, key KeyType, insert int) {
 	copy(nl.key[insert+1:], nl.key[insert:nl.children-1])
 	copy(nl.subPtr[insert+2:], nl.subPtr[insert+1:nl.children])
@@ -105,6 +85,25 @@ func (nl *bplusNonLeaf) simpleInsert(lch node, rch node, key KeyType, insert int
 	} else {
 		for i := insert; i < nl.children; i++ {
 			nl.subPtr[i].(*bplusLeaf).parentKeyIdx = i - 1
+		}
+	}
+}
+
+func (nl *bplusNonLeaf) simpleRemove(remove int) {
+	assert(nl.children >= 2)
+	copy(nl.key[remove:], nl.key[remove+1:nl.children-1])
+	copy(nl.subPtr[remove+1:], nl.subPtr[remove+2:nl.children])
+	nl.children--
+	// for gc
+	nl.subPtr[nl.children] = nil
+
+	if _, ok := nl.subPtr[0].(*bplusLeaf); ok {
+		for i := remove + 1; i < nl.children; i++ {
+			nl.subPtr[i].(*bplusLeaf).parentKeyIdx = i - 1
+		}
+	} else {
+		for i := remove + 1; i < nl.children; i++ {
+			nl.subPtr[i].(*bplusNonLeaf).parentKeyIdx = i - 1
 		}
 	}
 }
@@ -194,7 +193,7 @@ func (nl *bplusNonLeaf) delete() {
 
 func (nl *bplusNonLeaf) siblingSelect(parent *bplusNonLeaf, i int) (isLeft bool) {
 	if i == -1 {
-		/* the frist sub-node, no left sibling, choose the right one */
+		/* the first sub-node, no left sibling, choose the right one */
 		return false
 	} else if i == parent.children-2 {
 		/* the last sub-node, no right sibling, choose the left one */
@@ -258,7 +257,7 @@ func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key Ke
 	return splitKey
 }
 
-func (nl *bplusNonLeaf) splitRight1(right *bplusNonLeaf, lCh, rCh node, key KeyType, insert int, split int) KeyType {
+func (nl *bplusNonLeaf) splitRight1(right *bplusNonLeaf, lCh, rCh node, key KeyType, split int) KeyType {
 	var i, j int
 	var order = nl.children
 	/* split as right sibling */
@@ -492,8 +491,7 @@ type BPlusTree struct {
 	level int
 	root  node
 
-	firstLeaf    *bplusLeaf
-	firstNonLeaf [MaxLevel]*bplusNonLeaf
+	firstLeaf *bplusLeaf
 }
 
 func assert(ok bool) {
@@ -548,8 +546,6 @@ func (tree *BPlusTree) parentNodeBuild(left node, right node, key KeyType, level
 		/* update root */
 		tree.root = parent
 		tree.level++
-
-		tree.firstNonLeaf[tree.level] = parent
 		return 0
 	} else if rn.parent == nil {
 		/* trace upwards */
@@ -576,7 +572,7 @@ func (tree *BPlusTree) nonLeafInsert(node *bplusNonLeaf, lCh node, rCh node, key
 		if insert < split {
 			splitKey = node.splitLeft(sibling, lCh, rCh, key, insert, split)
 		} else if insert == split {
-			splitKey = node.splitRight1(sibling, lCh, rCh, key, insert, split)
+			splitKey = node.splitRight1(sibling, lCh, rCh, key, split)
 		} else {
 			splitKey = node.splitRight2(sibling, lCh, rCh, key, insert, split)
 		}
@@ -604,7 +600,7 @@ func (tree *BPlusTree) leafInsert(leaf *bplusLeaf, key KeyType, data DataType) i
 	if leaf.entries == tree.entries {
 		/* split = [m/2] */
 		split := (tree.entries + 1) / 2
-		/* splited sibling node */
+		/* split sibling node */
 		sibling := leafNew()
 		/* sibling leaf replication due to location of insertion */
 		if insert < split {
@@ -847,9 +843,11 @@ func Dump(tree *BPlusTree) {
 		nextSubIdx int
 	}
 
+	const maxLevel = 20
+
 	var level = 0
 	var nbl *nodeBacklog
-	var nblStack [MaxLevel]nodeBacklog
+	var nblStack [maxLevel]nodeBacklog
 	var topIndex int
 	top := &nblStack[topIndex]
 
