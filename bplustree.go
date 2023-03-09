@@ -5,26 +5,23 @@ import (
 )
 
 const (
-	BPLUS_MAX_ORDER   = 256
-	BPLUS_MAX_ENTRIES = 512
-	BPLUS_MAX_LEVEL   = 10
+	MaxOrder   = 256
+	MaxEntries = 512
+	MaxLevel   = 10
 )
+
+type nodeType int32
 
 const (
-	LEFT_SIBLING  = 0
-	RIGHT_SIBLING = 1
+	nodeLeaf nodeType = iota
+	nodeNonLeaf
 )
 
-const (
-	BPLUS_TREE_LEAF     = 0
-	BPLUS_TREE_NON_LEAF = 1
-)
-
-type key_t = int
-type value_t = int
+type KeyType = int
+type DataType = int
 
 type bplusNode struct {
-	typ          int           // BPLUS_TREE_LEAF is 0 and  BPLUS_TREE_NON_LEAF is 1
+	typ          nodeType      // leaf or nonLeaf
 	parentKeyIdx int           // index of parent node
 	parent       *bplusNonLeaf // piointer to parent node
 }
@@ -45,12 +42,12 @@ type bplusNonLeaf struct {
 	/**  number of child node */
 	children int
 	/**  key array */
-	key [BPLUS_MAX_ORDER - 1]key_t
+	key [MaxOrder - 1]KeyType
 	/** pointers to child node */
-	subPtr [BPLUS_MAX_ORDER]node
+	subPtr [MaxOrder]node
 }
 
-func (nl *bplusNonLeaf) keySearch(target key_t) (int, bool) {
+func (nl *bplusNonLeaf) keySearch(target KeyType) (int, bool) {
 	i, j := 0, nl.children-1
 	for i < j {
 		h := int(uint(i+j) >> 1)
@@ -93,7 +90,7 @@ func (nl *bplusNonLeaf) simpleRemove(remove int) {
 	}
 }
 
-func (nl *bplusNonLeaf) simpleInsert(lch node, rch node, key key_t, insert int) {
+func (nl *bplusNonLeaf) simpleInsert(lch node, rch node, key KeyType, insert int) {
 	copy(nl.key[insert+1:], nl.key[insert:nl.children-1])
 	copy(nl.subPtr[insert+2:], nl.subPtr[insert+1:nl.children])
 	nl.key[insert] = key
@@ -195,9 +192,22 @@ func (nl *bplusNonLeaf) delete() {
 	// TODO: free node
 }
 
-func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key key_t, insert int, split int) key_t {
+func (nl *bplusNonLeaf) siblingSelect(parent *bplusNonLeaf, i int) (isLeft bool) {
+	if i == -1 {
+		/* the frist sub-node, no left sibling, choose the right one */
+		return false
+	} else if i == parent.children-2 {
+		/* the last sub-node, no right sibling, choose the left one */
+		return true
+	} else {
+		/* if both left and right sibling found, choose the one with more entries */
+		return nl.prev.children >= nl.next.children
+	}
+}
+
+func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key KeyType, insert int, split int) KeyType {
 	var order = nl.children
-	var split_key key_t
+	var splitKey KeyType
 	/* split as left sibling */
 	nl.prev.listAdd(left, nl)
 	/* replicate from sub[0] to sub[split] */
@@ -224,10 +234,10 @@ func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key ke
 		lbn.parent = left
 		lbn.parentKeyIdx = j - 1
 		nl.subPtr[0] = rCh
-		split_key = key
+		splitKey = key
 	} else {
 		nl.subPtr[0] = nl.subPtr[split]
-		split_key = nl.key[split]
+		splitKey = nl.key[split-1]
 	}
 	sbn := getNode(nl.subPtr[0])
 	sbn.parent = nl
@@ -245,27 +255,26 @@ func (nl *bplusNonLeaf) splitLeft(left *bplusNonLeaf, lCh node, rCh node, key ke
 	}
 	nl.subPtr[j] = nl.subPtr[i]
 	nl.children = j + 1
-	return split_key
+	return splitKey
 }
 
-func (nl *bplusNonLeaf) splitRight1(right *bplusNonLeaf, l_ch, r_ch node, key key_t, insert int, split int) key_t {
+func (nl *bplusNonLeaf) splitRight1(right *bplusNonLeaf, lCh, rCh node, key KeyType, insert int, split int) KeyType {
 	var i, j int
 	var order = nl.children
-	var split_key key_t
 	/* split as right sibling */
 	nl.listAdd(right, nl.next)
 	/* split key is key[split - 1] */
-	split_key = nl.key[split-1]
+	splitKey := nl.key[split-1]
 	/* left node's children always be [split] */
 	nl.children = split
 	/* right node's first sub-node */
 	right.key[0] = key
-	right.subPtr[0] = l_ch
-	lbn := getNode(l_ch)
+	right.subPtr[0] = lCh
+	lbn := getNode(lCh)
 	lbn.parent = right
 	lbn.parentKeyIdx = -1
-	right.subPtr[1] = r_ch
-	rbn := getNode(r_ch)
+	right.subPtr[1] = rCh
+	rbn := getNode(rCh)
 	rbn.parent = right
 	rbn.parentKeyIdx = 0
 	/* insertion point is split point, replicate from key[split] */
@@ -280,19 +289,18 @@ func (nl *bplusNonLeaf) splitRight1(right *bplusNonLeaf, l_ch, r_ch node, key ke
 		j++
 	}
 	right.children = j + 1
-	return split_key
+	return splitKey
 }
 
-func (nl *bplusNonLeaf) splitRight2(right *bplusNonLeaf, lCh, rCh node, key key_t, insert int, split int) key_t {
+func (nl *bplusNonLeaf) splitRight2(right *bplusNonLeaf, lCh, rCh node, key KeyType, insert int, split int) KeyType {
 	var i, j int
 	var order = nl.children
-	var split_key key_t
 	/* left node's children always be [split + 1] */
 	nl.children = split + 1
 	/* split as right sibling */
 	nl.listAdd(right, nl.next)
 	/* split key is key[split] */
-	split_key = nl.key[split]
+	splitKey := nl.key[split]
 	/* right node's first sub-node */
 	right.subPtr[0] = nl.subPtr[split+1]
 	sn := getNode(right.subPtr[0])
@@ -328,7 +336,7 @@ func (nl *bplusNonLeaf) splitRight2(right *bplusNonLeaf, lCh, rCh node, key key_
 	rbn := getNode(rCh)
 	rbn.parent = right
 	rbn.parentKeyIdx = j
-	return split_key
+	return splitKey
 }
 
 type bplusLeaf struct {
@@ -339,13 +347,13 @@ type bplusLeaf struct {
 	/** number of actual key-value pairs in leaf node */
 	entries int
 	/**  key array */
-	kvs [BPLUS_MAX_ENTRIES]struct {
-		key   key_t
-		value value_t
+	kvs [MaxEntries]struct {
+		key   KeyType
+		value DataType
 	}
 }
 
-func (leaf *bplusLeaf) keySearch(target key_t) (int, bool) {
+func (leaf *bplusLeaf) keySearch(target KeyType) (int, bool) {
 	i, j := 0, leaf.entries
 	for i < j {
 		h := int(uint(i+j) >> 1)
@@ -369,7 +377,27 @@ func (leaf *bplusLeaf) listAdd(link *bplusLeaf, next *bplusLeaf) {
 	leaf.next = link
 }
 
-func (leaf *bplusLeaf) simpleInsert(key key_t, data value_t, insert int) {
+func (leaf *bplusLeaf) delete() {
+	leaf.prev.next = leaf.next
+	leaf.next.prev = leaf.prev
+
+	// TODO: free node
+}
+
+func (leaf *bplusLeaf) siblingSelect(parent *bplusNonLeaf, i int) (isLeft bool) {
+	if i == -1 {
+		/* the first sub-node, no left sibling, choose the right one */
+		return false
+	} else if i == parent.children-2 {
+		/* the last sub-node, no right sibling, choose the left one */
+		return true
+	} else {
+		/* if both left and right sibling found, choose the one with more entries */
+		return leaf.prev.entries >= leaf.next.entries
+	}
+}
+
+func (leaf *bplusLeaf) simpleInsert(key KeyType, data DataType, insert int) {
 	copy(leaf.kvs[insert+1:], leaf.kvs[insert:leaf.entries])
 	leaf.kvs[insert].key = key
 	leaf.kvs[insert].value = data
@@ -386,10 +414,10 @@ func (leaf *bplusLeaf) mergeFromRight(right *bplusLeaf) {
 	copy(leaf.kvs[leaf.entries:], right.kvs[:right.entries])
 	leaf.entries += right.entries
 	/* delete right sibling */
-	leafDelete(right)
+	right.delete()
 }
 
-func (leaf *bplusLeaf) splitLeft(left *bplusLeaf, key key_t, data value_t, insert int) {
+func (leaf *bplusLeaf) splitLeft(left *bplusLeaf, key KeyType, data DataType, insert int) {
 	/* split = [m/2] */
 	split := (leaf.entries + 1) / 2
 	/* split as left sibling */
@@ -431,10 +459,10 @@ func (leaf *bplusLeaf) mergeIntoLeft(left *bplusLeaf, remove int) {
 	left.entries += copy(left.kvs[left.entries:], leaf.kvs[0:remove])
 	left.entries += copy(left.kvs[left.entries:], leaf.kvs[remove+1:leaf.entries])
 	/* delete merged leaf */
-	leafDelete(leaf)
+	leaf.delete()
 }
 
-func (leaf *bplusLeaf) splitRight(right *bplusLeaf, key key_t, data value_t, insert int) {
+func (leaf *bplusLeaf) splitRight(right *bplusLeaf, key KeyType, data DataType, insert int) {
 	/* split = [m/2] */
 	split := (leaf.entries + 1) / 2
 	/* split as right sibling */
@@ -465,7 +493,7 @@ type BPlusTree struct {
 	root  node
 
 	firstLeaf    *bplusLeaf
-	firstNonLeaf [BPLUS_MAX_LEVEL]*bplusNonLeaf
+	firstNonLeaf [MaxLevel]*bplusNonLeaf
 }
 
 func assert(ok bool) {
@@ -476,7 +504,7 @@ func assert(ok bool) {
 
 func New(order int, entries int) *BPlusTree {
 	/* The max order of non leaf nodes must be more than two */
-	assert(order <= BPLUS_MAX_ORDER && entries <= BPLUS_MAX_ENTRIES)
+	assert(order <= MaxOrder && entries <= MaxEntries)
 
 	tree := new(BPlusTree)
 	tree.root = nil
@@ -489,7 +517,7 @@ func leafNew() *bplusLeaf {
 	leaf := new(bplusLeaf)
 	leaf.prev = leaf
 	leaf.next = leaf
-	leaf.typ = BPLUS_TREE_LEAF
+	leaf.typ = nodeLeaf
 	leaf.parentKeyIdx = -1
 	return leaf
 }
@@ -498,51 +526,12 @@ func nonLeafNew() *bplusNonLeaf {
 	nonLeaf := new(bplusNonLeaf)
 	nonLeaf.prev = nonLeaf
 	nonLeaf.next = nonLeaf
-	nonLeaf.typ = BPLUS_TREE_NON_LEAF
+	nonLeaf.typ = nodeNonLeaf
 	nonLeaf.parentKeyIdx = -1
 	return nonLeaf
 }
 
-func nonLeafSiblingSelect(lsib *bplusNonLeaf, rsib *bplusNonLeaf, parent *bplusNonLeaf, i int) int {
-	if i == -1 {
-		/* the frist sub-node, no left sibling, choose the right one */
-		return RIGHT_SIBLING
-	} else if i == parent.children-2 {
-		/* the last sub-node, no right sibling, choose the left one */
-		return LEFT_SIBLING
-	} else {
-		/* if both left and right sibling found, choose the one with more entries */
-		if lsib.children >= rsib.children {
-			return LEFT_SIBLING
-		}
-		return RIGHT_SIBLING
-	}
-}
-
-func leafDelete(node *bplusLeaf) {
-	node.prev.next = node.next
-	node.next.prev = node.prev
-
-	// TODO: free node
-}
-
-func leafSiblingSelect(lsib *bplusLeaf, rsib *bplusLeaf, parent *bplusNonLeaf, i int) int {
-	if i == -1 {
-		/* the first sub-node, no left sibling, choose the right one */
-		return RIGHT_SIBLING
-	} else if i == parent.children-2 {
-		/* the last sub-node, no right sibling, choose the left one */
-		return LEFT_SIBLING
-	} else {
-		/* if both left and right sibling found, choose the one with more entries */
-		if lsib.entries >= rsib.entries {
-			return LEFT_SIBLING
-		}
-		return RIGHT_SIBLING
-	}
-}
-
-func (tree *BPlusTree) parentNodeBuild(left node, right node, key key_t, level int) int {
+func (tree *BPlusTree) parentNodeBuild(left node, right node, key KeyType, level int) int {
 	ln := getNode(left)
 	rn := getNode(right)
 	if ln.parent == nil && rn.parent == nil {
@@ -573,7 +562,7 @@ func (tree *BPlusTree) parentNodeBuild(left node, right node, key key_t, level i
 	}
 }
 
-func (tree *BPlusTree) nonLeafInsert(node *bplusNonLeaf, lCh node, rCh node, key key_t, level int) int {
+func (tree *BPlusTree) nonLeafInsert(node *bplusNonLeaf, lCh node, rCh node, key KeyType, level int) int {
 	/* search key location */
 	insert, ok := node.keySearch(key)
 	assert(!ok)
@@ -581,7 +570,7 @@ func (tree *BPlusTree) nonLeafInsert(node *bplusNonLeaf, lCh node, rCh node, key
 	/* node is full */
 	if node.children == tree.order {
 		/* split = [m/2] */
-		var splitKey key_t
+		var splitKey KeyType
 		split := node.children / 2
 		sibling := nonLeafNew()
 		if insert < split {
@@ -603,7 +592,7 @@ func (tree *BPlusTree) nonLeafInsert(node *bplusNonLeaf, lCh node, rCh node, key
 	return 0
 }
 
-func (tree *BPlusTree) leafInsert(leaf *bplusLeaf, key key_t, data value_t) int {
+func (tree *BPlusTree) leafInsert(leaf *bplusLeaf, key KeyType, data DataType) int {
 	/* search key location */
 	insert, ok := leaf.keySearch(key)
 	if ok {
@@ -635,7 +624,7 @@ func (tree *BPlusTree) leafInsert(leaf *bplusLeaf, key key_t, data value_t) int 
 	return 0
 }
 
-func (tree *BPlusTree) leafRemove(leaf *bplusLeaf, key key_t) int {
+func (tree *BPlusTree) leafRemove(leaf *bplusLeaf, key KeyType) int {
 	remove, ok := leaf.keySearch(key)
 	if !ok {
 		/* Not exist */
@@ -644,26 +633,26 @@ func (tree *BPlusTree) leafRemove(leaf *bplusLeaf, key key_t) int {
 
 	if leaf.entries <= (tree.entries+1)/2 {
 		parent := leaf.parent
-		l_sib := leaf.prev
-		r_sib := leaf.next
 		if parent != nil {
 			/* decide which sibling to be borrowed from */
 			i := leaf.parentKeyIdx
-			if leafSiblingSelect(l_sib, r_sib, parent, i) == LEFT_SIBLING {
-				if l_sib.entries > (tree.entries+1)/2 {
-					leaf.shiftFromLeft(l_sib, i, remove)
+			if leaf.siblingSelect(parent, i) {
+				lSib := leaf.prev
+				if lSib.entries > (tree.entries+1)/2 {
+					leaf.shiftFromLeft(lSib, i, remove)
 				} else {
-					leaf.mergeIntoLeft(l_sib, remove)
+					leaf.mergeIntoLeft(lSib, remove)
 					/* trace upwards */
 					tree.nonLeafRemove(parent, i)
 				}
 			} else {
+				rSib := leaf.next
 				/* remove first in case of overflow during merging with sibling */
 				leaf.simpleRemove(remove)
-				if r_sib.entries > (tree.entries+1)/2 {
-					leaf.shiftFromRight(r_sib, i+1)
+				if rSib.entries > (tree.entries+1)/2 {
+					leaf.shiftFromRight(rSib, i+1)
 				} else {
-					leaf.mergeFromRight(r_sib)
+					leaf.mergeFromRight(rSib)
 					/* trace upwards */
 					tree.nonLeafRemove(parent, i+1)
 				}
@@ -673,7 +662,7 @@ func (tree *BPlusTree) leafRemove(leaf *bplusLeaf, key key_t) int {
 				/* delete the only last node */
 				assert(key == leaf.kvs[0].key)
 				tree.root = nil
-				leafDelete(leaf)
+				leaf.delete()
 				return 0
 			} else {
 				leaf.simpleRemove(remove)
@@ -686,7 +675,7 @@ func (tree *BPlusTree) leafRemove(leaf *bplusLeaf, key key_t) int {
 	return 0
 }
 
-func (tree *BPlusTree) Insert(key key_t, data value_t) int {
+func (tree *BPlusTree) Insert(key KeyType, data DataType) int {
 	node := tree.root
 	for node != nil {
 		if ln, ok := node.(*bplusLeaf); ok {
@@ -712,7 +701,7 @@ func (tree *BPlusTree) Insert(key key_t, data value_t) int {
 	return 0
 }
 
-func (tree *BPlusTree) Search(key key_t) (ret value_t, ok bool) {
+func (tree *BPlusTree) Search(key KeyType) (ret DataType, ok bool) {
 	node := tree.root
 	for node != nil {
 		if ln, success := node.(*bplusLeaf); success {
@@ -737,27 +726,27 @@ func (tree *BPlusTree) Search(key key_t) (ret value_t, ok bool) {
 
 func (tree *BPlusTree) nonLeafRemove(node *bplusNonLeaf, remove int) {
 	if node.children <= (tree.order+1)/2 {
-		l_sib := node.prev
-		r_sib := node.next
 		parent := node.parent
 		if parent != nil {
 			/* decide which sibling to be borrowed from */
 			i := node.parentKeyIdx
-			if nonLeafSiblingSelect(l_sib, r_sib, parent, i) == LEFT_SIBLING {
-				if l_sib.children > (tree.order+1)/2 {
-					node.shiftFromLeft(l_sib, i, remove)
+			if node.siblingSelect(parent, i) { // left
+				sib := node.prev
+				if sib.children > (tree.order+1)/2 {
+					node.shiftFromLeft(sib, i, remove)
 				} else {
-					node.mergeIntoLeft(l_sib, i, remove)
+					node.mergeIntoLeft(sib, i, remove)
 					/* trace upwards */
 					tree.nonLeafRemove(parent, i)
 				}
-			} else {
+			} else { // right
+				sib := node.next
 				/* remove first in case of overflow during merging with sibling */
 				node.simpleRemove(remove)
-				if r_sib.children > (tree.order+1)/2 {
-					node.shiftFromRight(r_sib, i+1)
+				if sib.children > (tree.order+1)/2 {
+					node.shiftFromRight(sib, i+1)
 				} else {
-					node.mergeFromRight(r_sib, i+1)
+					node.mergeFromRight(sib, i+1)
 					/* trace upwards */
 					tree.nonLeafRemove(parent, i+1)
 				}
@@ -780,7 +769,7 @@ func (tree *BPlusTree) nonLeafRemove(node *bplusNonLeaf, remove int) {
 	}
 }
 
-func (tree *BPlusTree) Delete(key key_t) int {
+func (tree *BPlusTree) Delete(key KeyType) int {
 	node := tree.root
 	for node != nil {
 		if ln, ok := node.(*bplusLeaf); ok {
@@ -802,9 +791,9 @@ func (tree *BPlusTree) listIsLastLeaf(link *bplusLeaf) bool {
 	return link == tree.firstLeaf
 }
 
-func (tree *BPlusTree) GetRange(key1 key_t, key2 key_t) (value_t, bool) {
-	var data value_t
-	var min, max key_t
+func (tree *BPlusTree) GetRange(key1 KeyType, key2 KeyType) (DataType, bool) {
+	var data DataType
+	var min, max KeyType
 	if key1 <= key2 {
 		min = key1
 		max = key2
@@ -855,59 +844,71 @@ func Dump(tree *BPlusTree) {
 		/* Node backlogged */
 		node node
 		/* The index next to the backtrack point, must be >= 1 */
-		next_sub_idx int
+		nextSubIdx int
 	}
 
 	var level = 0
 	var nbl *nodeBacklog
-	var nbl_stack [BPLUS_MAX_LEVEL]nodeBacklog
+	var nblStack [MaxLevel]nodeBacklog
 	var topIndex int
-	top := &nbl_stack[topIndex]
+	top := &nblStack[topIndex]
 
 	node := tree.root
 	for {
 		if node != nil {
 			/* non-zero needs backward and zero does not */
-			var sub_idx int
+			var subIdx int
 			if nbl != nil {
-				sub_idx = nbl.next_sub_idx
+				subIdx = nbl.nextSubIdx
 			}
 			/* Reset each loop */
 			nbl = nil
 
 			/* Backlog the path */
 			nl, ok := node.(*bplusNonLeaf)
-			if !ok || sub_idx+1 >= nl.children { // leaf or no children
+			if !ok || subIdx+1 >= nl.children { // leaf or no children
 				top.node = nil
-				top.next_sub_idx = 0
+				top.nextSubIdx = 0
 			} else {
 				top.node = node
-				top.next_sub_idx = sub_idx + 1
+				top.nextSubIdx = subIdx + 1
 			}
 			topIndex++
-			top = &nbl_stack[topIndex]
+			top = &nblStack[topIndex]
 
 			level++
 
 			/* Draw the whole node when the first entry is passed through */
-			if sub_idx == 0 {
+			if subIdx == 0 {
 				for i := 1; i < level; i++ {
 					if i == level-1 {
 						fmt.Printf("%-8s", "+-------")
 					} else {
-						if nbl_stack[i-1].node != nil {
+						if nblStack[i-1].node != nil {
 							fmt.Printf("%-8s", "|")
 						} else {
 							fmt.Printf("%-8s", " ")
 						}
 					}
 				}
-				key_print(node)
+				if leaf, ok := node.(*bplusLeaf); ok {
+					fmt.Printf("leaf:")
+					for i := 0; i < leaf.entries; i++ {
+						fmt.Printf(" %d", leaf.kvs[i].key)
+					}
+				} else {
+					fmt.Printf("node:")
+					nonLeaf := node.(*bplusNonLeaf)
+					for i := 0; i < nonLeaf.children-1; i++ {
+						fmt.Printf(" %d", nonLeaf.key[i])
+					}
+				}
+				println()
 			}
 
 			/* Move deep down */
 			if nln, ok := node.(*bplusNonLeaf); ok {
-				node = nln.subPtr[sub_idx]
+				node = nln.subPtr[subIdx]
 			} else {
 				node = nil
 			}
@@ -916,7 +917,7 @@ func Dump(tree *BPlusTree) {
 				nbl = nil
 			} else {
 				topIndex--
-				top = &nbl_stack[topIndex]
+				top = &nblStack[topIndex]
 				nbl = top
 			}
 			if nbl == nil {
@@ -927,20 +928,4 @@ func Dump(tree *BPlusTree) {
 			level--
 		}
 	}
-}
-
-func key_print(node node) {
-	if leaf, ok := node.(*bplusLeaf); ok {
-		fmt.Printf("leaf:")
-		for i := 0; i < leaf.entries; i++ {
-			fmt.Printf(" %d", leaf.kvs[i].key)
-		}
-	} else {
-		non_leaf := node.(*bplusNonLeaf)
-		fmt.Printf("node:")
-		for i := 0; i < non_leaf.children-1; i++ {
-			fmt.Printf(" %d", non_leaf.key[i])
-		}
-	}
-	println()
 }

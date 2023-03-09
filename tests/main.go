@@ -135,14 +135,7 @@ func bplus_tree_insert_delete_test(tree *bplustree.BPlusTree) {
 
 	fmt.Fprintf(os.Stderr, "\n-- Delete %d to 1, dump:\n", max_key)
 	for i = max_key; i > 0; i-- {
-		var n = 98
-		if i == n {
-			bplustree.Dump(tree)
-		}
 		tree.Delete(i)
-		if i == n {
-			bplustree.Dump(tree)
-		}
 	}
 	bplustree.Dump(tree)
 }

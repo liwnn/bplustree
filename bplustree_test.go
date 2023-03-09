@@ -28,7 +28,7 @@ func BenchmarkInsert(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		bt := New(255, 511)
+		bt := New(256, 512)
 		for i := testCount; i > 0; i-- {
 			bt.Insert(i, 1)
 		}
@@ -37,7 +37,7 @@ func BenchmarkInsert(b *testing.B) {
 
 func BenchmarkSearch(b *testing.B) {
 	testCount := 1000000
-	bt := New(255, 511)
+	bt := New(256, 512)
 	for i := testCount; i > 0; i-- {
 		bt.Insert(i, 1)
 	}
@@ -52,7 +52,7 @@ func BenchmarkSearch(b *testing.B) {
 
 func BenchmarkDelete(b *testing.B) {
 	testCount := b.N
-	bt := New(255, 511)
+	bt := New(256, 512)
 	for i := testCount; i > 0; i-- {
 		bt.Insert(i, 1)
 	}

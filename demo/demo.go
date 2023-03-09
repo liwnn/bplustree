@@ -19,7 +19,7 @@ func bplus_tree_setting(config *bplusTreeConfig) int {
 	var again = true
 
 	fmt.Fprintf(os.Stderr, "\n-- B+tree setting...\n")
-	fmt.Fprintf(os.Stderr, "Set b+tree non-leaf order (3 < order <= %d e.g. 7): ", bplustree.BPLUS_MAX_ORDER)
+	fmt.Fprintf(os.Stderr, "Set b+tree non-leaf order (3 < order <= %d e.g. 7): ", bplustree.MaxOrder)
 
 	br := bufio.NewReader(os.Stdin)
 	for again {
@@ -52,7 +52,7 @@ func bplus_tree_setting(config *bplusTreeConfig) int {
 				if c != '\n' {
 					_, _ = br.ReadBytes('\n')
 					again = true
-				} else if config.order < 3 || config.order > bplustree.BPLUS_MAX_ORDER {
+				} else if config.order < 3 || config.order > bplustree.MaxOrder {
 					again = true
 				} else {
 					again = false
@@ -62,7 +62,7 @@ func bplus_tree_setting(config *bplusTreeConfig) int {
 	}
 
 	again = true
-	fmt.Fprintf(os.Stderr, "Set b+tree leaf entries (<= %d e.g. 10): ", bplustree.BPLUS_MAX_ENTRIES)
+	fmt.Fprintf(os.Stderr, "Set b+tree leaf entries (<= %d e.g. 10): ", bplustree.MaxEntries)
 	for again {
 		i, err := br.ReadByte()
 		if err != nil {
@@ -93,7 +93,7 @@ func bplus_tree_setting(config *bplusTreeConfig) int {
 				if c != '\n' {
 					_, _ = br.ReadBytes('\n')
 					again = true
-				} else if config.entries > bplustree.BPLUS_MAX_ENTRIES {
+				} else if config.entries > bplustree.MaxEntries {
 					again = true
 				} else {
 					again = false
